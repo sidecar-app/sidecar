@@ -1,0 +1,33 @@
+# Claude Code
+.claude
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+.env.local
+
+# Generated mobile icons (not needed for desktop targets)
+host-app/src-tauri/icons/android/
+host-app/src-tauri/icons/ios/
+
+# JS
+node_modules/
+
+# Rust
+target/
+
+# Build
+dist/
+
+# Private development artifacts
+.planning/

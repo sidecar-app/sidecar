@@ -1,0 +1,52 @@
+[workspace]
+members = [
+    "host-app/src-tauri",
+    "crates/capture",
+    "crates/encode",
+    "crates/input",
+    "crates/ipc",
+    "crates/net",
+    "crates/overlay-sidecar",
+    "crates/pipeline",
+    "crates/sidecar-cli",
+]
+# sidecar-cli is Linux-only; exclude from default builds.
+# overlay-sidecar is a library consumed by sidecar-cli and host-app (on Linux).
+default-members = [
+    "host-app/src-tauri",
+    "crates/capture",
+    "crates/encode",
+    "crates/input",
+    "crates/ipc",
+    "crates/net",
+    "crates/overlay-sidecar",
+    "crates/pipeline",
+]
+resolver = "2"
+
+[workspace.package]
+license = "MIT"
+repository = "https://github.com/sidecar-app/sidecar"
+authors = ["Jochim Van Dijck <i@jvd.me>"]
+
+# Optimize encoding pipeline even in dev builds.
+# Without this, 4K VP9 encoding runs at ~5fps in debug mode
+[profile.dev.package.encode]
+opt-level = 2
+[profile.dev.package.dcv-color-primitives]
+opt-level = 2
+# fast_image_resize uses SIMD for Lanczos3/Box convolution.
+# Without optimization, resize takes 55ms/frame (debug) vs 3ms (release)
+[profile.dev.package.fast_image_resize]
+opt-level = 2
+[profile.dev.package.webrtc]
+opt-level = 1
+[profile.dev.package.webrtc-srtp]
+opt-level = 2
+
+# Fast release-like CI builds: skip LTO for speed, keep optimizations
+[profile.ci]
+inherits = "release"
+debug = false
+lto = false
+codegen-units = 16

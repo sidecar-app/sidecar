@@ -1,0 +1,211 @@
+/* Viewer container */
+.viewer-container {
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+}
+
+.viewer-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* Zoom wrapper -- transforms video + canvas together */
+.zoom-wrapper {
+  position: absolute;
+  inset: 0;
+  /* No transition -- instant zoom response per Google Maps feel */
+}
+
+/* When Space is held while zoomed, show grab cursor */
+.zoom-wrapper.zoomed.space-pan {
+  cursor: grab;
+}
+
+.zoom-wrapper.zoomed.space-pan:active {
+  cursor: grabbing;
+}
+
+/* When in draw mode, even if zoomed, use crosshair (draw takes priority) */
+.zoom-wrapper.zoomed .canvas-overlay.draw-mode .konvajs-content {
+  cursor: crosshair !important;
+}
+
+/* Draw Mode Cursor */
+.canvas-overlay.draw-mode .konvajs-content {
+  cursor: crosshair !important;
+}
+
+/* Space+drag pan in draw mode overrides crosshair (D-07) */
+.canvas-overlay.space-pan .konvajs-content {
+  cursor: grab !important;
+}
+
+.canvas-overlay.space-pan:active .konvajs-content {
+  cursor: grabbing !important;
+}
+
+/* Edge indicator overlay for off-screen remote strokes (D-14) */
+.edge-indicator-container {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 90;
+}
+
+/* ===== Floating Icon Toolbar ===== */
+
+.draw-toolbar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  background: rgba(23, 23, 23, 0.82);
+  border-radius: 14px;
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45),
+    0 0 0 0.5px rgba(255, 255, 255, 0.06) inset;
+  z-index: 100;
+  pointer-events: auto;
+}
+
+/* Leave button -- red tint on hover */
+.leave-icon-btn:hover {
+  background: rgba(220, 38, 38, 0.3);
+  color: #fca5a5;
+}
+
+/* Draw tools group — collapses when draw mode is off */
+.draw-tools-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  margin-right: -4px;
+  transition: max-width 0.2s ease, opacity 0.15s ease, margin-right 0.2s ease;
+  pointer-events: none;
+}
+
+.draw-tools-group.visible {
+  max-width: 80px;
+  margin-right: 0;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Zoom button */
+.zoom-btn {
+  position: relative;
+}
+
+.zoom-btn.zoomed {
+  color: #fff;
+}
+
+/* Host CTA, bottom-right */
+.viewer-host-cta {
+  position: absolute;
+  bottom: 20px;
+  right: 16px;
+  z-index: 80;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  text-decoration: none;
+  text-shadow:
+    0 0 2px rgba(0, 0, 0, 0.8),
+    0 0 4px rgba(0, 0, 0, 0.8),
+    0 0 8px rgba(0, 0, 0, 0.6),
+    0 0 16px rgba(0, 0, 0, 0.45),
+    0 0 30px rgba(0, 0, 0, 0.3),
+    0 0 50px rgba(0, 0, 0, 0.15);
+  transition: color 0.15s ease;
+}
+
+.viewer-host-cta:hover {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.viewer-host-cta-link {
+  color: rgba(96, 165, 250, 0.6);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.viewer-host-cta:hover .viewer-host-cta-link {
+  color: rgba(96, 165, 250, 0.85);
+}
+
+/* Stats for Nerds Overlay */
+.stats-overlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.8);
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 11px;
+  max-width: 340px;
+  min-width: 260px;
+  pointer-events: auto;
+}
+
+.stats-overlay-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 8px;
+}
+
+.stats-close {
+  cursor: pointer;
+  color: #999;
+  font-size: 14px;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.stats-close:hover {
+  color: #fff;
+}
+
+.stats-overlay-section {
+  color: #888;
+  text-transform: uppercase;
+  font-size: 10px;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  letter-spacing: 0.05em;
+}
+
+.stats-overlay-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 1px 0;
+}
+
+.stats-overlay-label {
+  color: #999;
+}
+
+.stats-overlay-value {
+  color: #fff;
+}

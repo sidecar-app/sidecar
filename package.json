@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "license": "MIT",
+  "workspaces": ["packages/*", "host-app", "viewer-web"]
+}

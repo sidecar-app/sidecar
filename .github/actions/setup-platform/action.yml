@@ -1,0 +1,64 @@
+name: Setup Platform Dependencies
+description: Install platform-specific build dependencies for Sidecar
+
+runs:
+  using: composite
+  steps:
+    - name: Install Linux system dependencies
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libwebkit2gtk-4.1-dev \
+          libappindicator3-dev \
+          librsvg2-dev \
+          patchelf \
+          libvpx-dev \
+          libpipewire-0.3-dev \
+          libspa-0.2-dev \
+          libdbus-1-dev \
+          libclang-dev \
+          libavutil-dev \
+          libavcodec-dev \
+          libavformat-dev \
+          libavfilter-dev \
+          libavdevice-dev \
+          libswscale-dev \
+          libswresample-dev
+
+    - name: Install macOS dependencies
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        # ffmpeg-next 8.1 supports FFmpeg through version 8. Pin the Homebrew
+        # dependency so a new major FFmpeg release cannot break cold CI builds.
+        brew install libvpx ffmpeg@7
+        echo "VPX_INCLUDE_DIR=$(brew --prefix libvpx)/include" >> $GITHUB_ENV
+        echo "VPX_LIB_DIR=$(brew --prefix libvpx)/lib" >> $GITHUB_ENV
+        echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(brew --prefix libvpx)/include" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg@7)/lib/pkgconfig:$(brew --prefix libvpx)/lib/pkgconfig" >> $GITHUB_ENV
+        echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+
+    # Cache vcpkg's installed/packages dirs so libvpx isn't rebuilt from source
+    # every run (~10-15 min on windows-latest). Bump the cache key suffix
+    # (-v1, -v2, ...) to force a rebuild when libvpx port version changes.
+    - name: Cache vcpkg artifacts (Windows)
+      if: runner.os == 'Windows'
+      uses: actions/cache@v4
+      with:
+        path: |
+          C:\vcpkg\installed
+          C:\vcpkg\packages
+        key: vcpkg-libvpx-${{ runner.os }}-v1
+
+    - name: Install Windows dependencies (vcpkg libvpx)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        vcpkg install libvpx:x64-windows-static
+        echo "VPX_LIB_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static\lib" >> $env:GITHUB_ENV
+        echo "VPX_INCLUDE_DIR=$env:VCPKG_INSTALLATION_ROOT\installed\x64-windows-static\include" >> $env:GITHUB_ENV
+        # Pin libclang for bindgen. windows-latest ships LLVM here today;
+        # setting this defensively avoids a silent break if the image moves it.
+        echo "LIBCLANG_PATH=C:\Program Files\LLVM\bin" >> $env:GITHUB_ENV

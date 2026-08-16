@@ -1,0 +1,23 @@
+[package]
+name = "input"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+thiserror = "2"
+tracing = "0.1"
+tokio = { version = "1", features = ["rt", "sync", "net", "time", "io-util"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13", features = ["remote_desktop", "screencast"] }
+# wlroots fallback (Sway/Hyprland/etc. where the RemoteDesktop portal is absent)
+wayland-client = "0.31"
+wayland-protocols-wlr = { version = "0.3", features = ["client"] }
+wayland-protocols-misc = { version = "0.3", features = ["client"] }
+calloop = "0.14"
+calloop-wayland-source = "0.4"
+xkbcommon = "0.8"
+libc = "0.2"

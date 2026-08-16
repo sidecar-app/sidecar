@@ -1,0 +1,26 @@
+[package]
+name = "sidecar-cli"
+version = "0.1.0"
+edition = "2024"
+description = "Terminal interface for Sidecar screen sharing"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "sidecar"
+path = "src/main.rs"
+
+[dependencies]
+pipeline = { path = "../pipeline" }
+ipc = { path = "../ipc" }
+ratatui = "0.30"
+crossterm = { version = "0.29", features = ["event-stream"] }
+futures = "0.3"
+clap = { version = "4", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde_json = "1"
+libc = "0.2"
+overlay-sidecar = { path = "../overlay-sidecar" }

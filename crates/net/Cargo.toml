@@ -1,0 +1,30 @@
+[package]
+name = "net"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+webrtc = "0.17.1"
+webrtc-ice = "0.17"
+rtcp = "0.17"
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "time"] }
+tokio-tungstenite = { version = "0.29", features = ["native-tls"] }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+bytes = "1"
+
+encode = { path = "../encode" }
+ipc = { path = "../ipc" }
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+arboard = "3"
+
+[dev-dependencies]
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "rt-multi-thread", "macros", "time"] }

@@ -1,0 +1,42 @@
+[package]
+name = "sidecar"
+version = "0.1.0"
+description = "Low-latency peer-to-peer screen sharing"
+edition = "2024"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "sidecar_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
+tauri-plugin-opener = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-updater = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+capture = { path = "../../crates/capture" }
+encode = { path = "../../crates/encode" }
+net = { path = "../../crates/net" }
+pipeline = { path = "../../crates/pipeline" }
+ipc = { path = "../../crates/ipc" }
+image = "0.25"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+overlay-sidecar = { path = "../../crates/overlay-sidecar" }

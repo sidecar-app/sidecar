@@ -1,0 +1,7 @@
+{
+  "tasks": {
+    "dev": "deno run -A npm:vite",
+    "build": "deno run -A npm:typescript/tsc && deno run -A npm:vite build",
+    "tauri": "deno run -A npm:@tauri-apps/cli"
+  }
+}

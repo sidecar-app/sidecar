@@ -1,0 +1,4 @@
+{
+  "name": "@sidecar/viewer",
+  "exports": "./src/index.ts"
+}

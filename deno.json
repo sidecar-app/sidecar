@@ -1,0 +1,13 @@
+{
+  "workspace": ["packages/viewer", "host-app", "viewer-web"],
+  "lint": {
+    "include": ["packages/", "host-app/src/", "viewer-web/src/"],
+    "rules": {
+      "exclude": ["no-sloppy-imports", "no-window", "no-window-prefix", "no-slow-types"]
+    }
+  },
+  "fmt": {
+    "include": ["packages/", "host-app/src/", "viewer-web/src/"]
+  },
+  "nodeModulesDir": "auto"
+}

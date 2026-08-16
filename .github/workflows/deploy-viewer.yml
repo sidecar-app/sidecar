@@ -1,0 +1,69 @@
+name: Deploy Viewer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - viewer-web/**
+      - packages/viewer/**
+      - .github/workflows/deploy-viewer.yml
+
+concurrency:
+  group: deploy-viewer
+  cancel-in-progress: true
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}/viewer-web
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: viewer-web/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}
+          build-args: |
+            VITE_SIGNALING_URL=${{ vars.VITE_SIGNALING_URL }}
+
+      - name: Deploy to server
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          SERVER_DEPLOY_PATH: ${{ vars.SERVER_DEPLOY_PATH }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+          SERVER_SSH_KNOWN_HOSTS: ${{ secrets.SERVER_SSH_KNOWN_HOSTS }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+        run: |
+          test -n "$SERVER_DEPLOY_PATH"
+          test -n "$SERVER_SSH_KNOWN_HOSTS"
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$SERVER_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+          eval "$(ssh-agent -s)"
+          trap 'ssh-agent -k' EXIT
+          printf '%s\n' "$SERVER_SSH_KEY" | ssh-add -
+          printf '%s' "$GHCR_TOKEN" | \
+            ssh -o StrictHostKeyChecking=yes "$SERVER_USER@$SERVER_HOST" \
+              "docker login ghcr.io -u \"$GHCR_USER\" --password-stdin"
+          ssh -o StrictHostKeyChecking=yes "$SERVER_USER@$SERVER_HOST" \
+            "cd \"$SERVER_DEPLOY_PATH\" && \
+             git fetch origin main && git reset --hard origin/main && \
+             cd sidecar/viewer-web && docker compose pull && docker compose up -d && docker image prune -f"

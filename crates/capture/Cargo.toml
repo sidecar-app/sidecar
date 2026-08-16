@@ -1,0 +1,24 @@
+[package]
+name = "capture"
+version = "0.1.0"
+edition = "2024"
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+tokio = { version = "1", features = ["sync"] }
+thiserror = "2"
+tracing = "0.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13", features = ["screencast"] }
+pipewire = "0.9"
+libc = "0.2"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-capture = "1.5"
+
+[dev-dependencies]
+png = "0.18"
+tokio = { version = "1", features = ["full"] }

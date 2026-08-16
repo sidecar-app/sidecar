@@ -1,0 +1,146 @@
+/* ===== Shared Icon Toolbar Styles ===== */
+
+/* Icon button base */
+.toolbar-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.toolbar-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.toolbar-icon-btn.active {
+  background: rgba(var(--accent-rgb), 0.35);
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: #fff;
+}
+
+.toolbar-icon-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Color indicator on the draw-settings button */
+.settings-color-indicator {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2.5px solid currentColor;
+  background: transparent;
+  transition: border-color 0.15s, transform 0.1s;
+}
+
+.draw-settings-btn:hover .settings-color-indicator {
+  transform: scale(1.1);
+}
+
+/* Draw Settings Popover */
+.draw-settings-popover {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 14px;
+  background: rgba(23, 23, 23, 0.92);
+  border-radius: 12px;
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  z-index: 110;
+  pointer-events: auto;
+}
+
+.popover-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.4);
+  margin-bottom: 6px;
+}
+
+.popover-section-label:not(:first-child) {
+  margin-top: 10px;
+}
+
+/* Side-by-side rows for color + size */
+.popover-columns {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+}
+
+.popover-column {
+  display: flex;
+  flex-direction: column;
+}
+
+.popover-color-col {
+  display: flex;
+  gap: 6px;
+}
+
+.popover-color-col .color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2.5px solid transparent;
+  transition: border-color 0.15s, transform 0.12s;
+}
+
+.popover-color-col .color-swatch:hover {
+  transform: scale(1.15);
+}
+
+.popover-color-col .color-swatch.active {
+  border-color: #fff;
+}
+
+.popover-width-col {
+  display: flex;
+  gap: 6px;
+}
+
+.popover-width-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  padding: 0;
+}
+
+.popover-width-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.popover-width-btn.active {
+  border-color: rgba(var(--accent-rgb), 0.6);
+  background: rgba(var(--accent-rgb), 0.2);
+}
+
+.popover-width-dot {
+  display: block;
+  border-radius: 50%;
+}
