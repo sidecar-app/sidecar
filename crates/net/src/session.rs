@@ -692,14 +692,27 @@ impl HostSession {
         Ok(())
     }
 
-    /// Validate that a viewer annotation payload is well-formed.
-    /// Rejects oversized messages and payloads that aren't valid JSON.
-    fn validate_annotation(message: &str) -> bool {
+    /// Validate a viewer annotation payload and stamp it with the sender's
+    /// signaling id. Rejects oversized messages and payloads that aren't JSON
+    /// objects.
+    ///
+    /// The `id` a viewer puts in its own packets is self-chosen, so it can't be
+    /// trusted to identify the sender: a viewer could spoof another viewer's id
+    /// (e.g. to inject input as the active remote controller), and it never
+    /// matches the signaling id that viewer-left cleanup uses. Overwriting it
+    /// with the data channel's viewer id makes every downstream consumer (relay
+    /// targets, host frontend, remote-control tracking) key on the same id.
+    fn stamp_annotation(message: &str, sender_id: &str) -> Option<String> {
         const MAX_ANNOTATION_SIZE: usize = 4096;
         if message.len() > MAX_ANNOTATION_SIZE {
-            return false;
+            return None;
         }
-        serde_json::from_str::<serde_json::Value>(message).is_ok()
+        let mut value = serde_json::from_str::<serde_json::Value>(message).ok()?;
+        value.as_object_mut()?.insert(
+            "id".to_string(),
+            serde_json::Value::String(sender_id.to_string()),
+        );
+        Some(value.to_string())
     }
 
     /// Annotation relay loop: receives from individual viewer data channels
@@ -725,10 +738,10 @@ impl HostSession {
             tokio::select! {
                 // Viewer annotation: typed dispatch via AnnotationMessage enum (D-14)
                 Some((sender_id, message)) = relay_rx.recv() => {
-                    if !Self::validate_annotation(&message) {
+                    let Some(message) = Self::stamp_annotation(&message, &sender_id) else {
                         tracing::warn!(viewer_id = %sender_id, len = message.len(), "Rejected invalid annotation payload");
                         continue;
-                    }
+                    };
                     match serde_json::from_str::<AnnotationMessage>(&message) {
                         Ok(AnnotationMessage::KeyframeRequest { .. }) => {
                             let now = tokio::time::Instant::now();
@@ -797,7 +810,9 @@ impl HostSession {
                             // Remote-control intent + input. Forward to the host pipeline
                             // ONLY -- never relay to other viewers, so keystrokes (e.g.
                             // passwords typed during remote control) can't leak to peers.
-                            // Each packet carries the viewer's own id for controller tracking.
+                            // `id` was stamped with the sender's signaling id above, so
+                            // controller tracking matches viewer-left cleanup and a
+                            // viewer can't impersonate the active controller.
                             let _ = annotation_forward_tx.send(message.clone());
                         }
                         Err(_) => {
@@ -986,6 +1001,30 @@ mod tests {
         let mut pool = ColorPool::new();
         pool.release("nonexistent"); // should not panic
         assert_eq!(pool.available.len(), 7);
+    }
+
+    #[test]
+    fn stamp_annotation_overwrites_spoofed_id() {
+        let stamped =
+            HostSession::stamp_annotation(r#"{"t":"kd","k":"KeyR","id":"other"}"#, "v1").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&stamped).unwrap();
+        assert_eq!(v["id"], "v1");
+        assert_eq!(v["k"], "KeyR");
+    }
+
+    #[test]
+    fn stamp_annotation_adds_missing_id() {
+        let stamped = HostSession::stamp_annotation(r#"{"t":"kf"}"#, "v1").unwrap();
+        let v: serde_json::Value = serde_json::from_str(&stamped).unwrap();
+        assert_eq!(v["id"], "v1");
+    }
+
+    #[test]
+    fn stamp_annotation_rejects_invalid_payloads() {
+        assert!(HostSession::stamp_annotation("not json", "v1").is_none());
+        assert!(HostSession::stamp_annotation("[1,2]", "v1").is_none());
+        let oversized = format!(r#"{{"t":"c","pad":"{}"}}"#, "x".repeat(5000));
+        assert!(HostSession::stamp_annotation(&oversized, "v1").is_none());
     }
 
     #[test]
