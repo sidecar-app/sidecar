@@ -715,6 +715,12 @@ impl HostSession {
         Some(value.to_string())
     }
 
+    /// Build a color-assign (`ca`) packet. Serialized with serde so ids and
+    /// colors are always escaped correctly.
+    fn color_assign_json(viewer_id: &str, color: &str) -> String {
+        serde_json::json!({ "t": "ca", "id": viewer_id, "c": color }).to_string()
+    }
+
     /// Annotation relay loop: receives from individual viewer data channels
     /// and from host frontend injection, broadcasts to appropriate targets.
     /// Also handles data channel state events for color assignment before
@@ -763,24 +769,25 @@ impl HostSession {
                             let _ = annotation_forward_tx.send(viewport_msg);
                         }
                         Ok(AnnotationMessage::ColorChange { ref id, ref c }) => {
-                            {
+                            if !ipc::is_valid_hex_color(c) {
+                                warn!(viewer_id = %id, "Rejected invalid color change");
+                                continue;
+                            }
+                            let dc = {
                                 let mut locked = inner.lock().await;
                                 locked.color_pool.update_color(id, c.to_string());
                                 info!(viewer_id = %id, color = %c, "Updated viewer color");
-                            }
-                            // Broadcast to ALL viewers (including the sender) so everyone
-                            // sees the new color.
-                            let ca_json = format!(r#"{{"t":"ca","id":"{id}","c":"{c}"}}"#);
-                            let targets: Vec<(String, Arc<webrtc::data_channel::RTCDataChannel>)> = {
-                                let locked = inner.lock().await;
-                                locked.viewers.iter()
-                                    .map(|(id, vs)| (id.clone(), vs.peer.data_channel().clone()))
-                                    .collect()
+                                locked.viewers.get(id).map(|vs| vs.peer.data_channel().clone())
                             };
-                            for (vid, dc) in targets {
-                                if let Err(e) = dc.send_text(ca_json.clone()).await {
-                                    warn!(viewer_id = %vid, error = %e, "Failed to send color update");
-                                }
+                            // Confirm to the sender only: viewers treat `ca` as their
+                            // OWN color assignment, so broadcasting it would recolor
+                            // everyone. Other viewers learn the new color from the
+                            // `c`/`ds` packets that carry it.
+                            let ca_json = Self::color_assign_json(id, c);
+                            if let Some(dc) = dc
+                                && let Err(e) = dc.send_text(ca_json.clone()).await
+                            {
+                                warn!(viewer_id = %id, error = %e, "Failed to send color update");
                             }
                             // Also forward to host frontend so host sees updated color
                             let _ = annotation_forward_tx.send(ca_json);
@@ -868,7 +875,7 @@ impl HostSession {
                             let mut locked = inner.lock().await;
                             let color = locked.color_pool.assign(&viewer_id);
                             info!(viewer_id = %viewer_id, color = %color, "Assigned annotation color");
-                            format!(r#"{{"t":"ca","id":"{}","c":"{}"}}"#, viewer_id, color)
+                            Self::color_assign_json(&viewer_id, &color)
                         };
                         let dc = {
                             let locked = inner.lock().await;
@@ -1025,6 +1032,15 @@ mod tests {
         assert!(HostSession::stamp_annotation("[1,2]", "v1").is_none());
         let oversized = format!(r#"{{"t":"c","pad":"{}"}}"#, "x".repeat(5000));
         assert!(HostSession::stamp_annotation(&oversized, "v1").is_none());
+    }
+
+    #[test]
+    fn color_assign_json_escapes_fields() {
+        let json = HostSession::color_assign_json(r#"x","t":"cl"#, "#FF3B30");
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["t"], "ca");
+        assert_eq!(v["id"], r#"x","t":"cl"#);
+        assert_eq!(v["c"], "#FF3B30");
     }
 
     #[test]
