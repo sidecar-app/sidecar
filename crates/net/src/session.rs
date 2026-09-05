@@ -34,8 +34,11 @@ struct ColorPool {
     palette: Vec<String>,
     /// Colors currently available for assignment.
     available: VecDeque<String>,
-    /// Map of viewer_id -> assigned color.
+    /// Map of viewer_id -> palette color handed out by `assign`. This is what
+    /// `release` returns to the pool, regardless of any custom color.
     assigned: HashMap<String, String>,
+    /// Map of viewer_id -> color picked by the viewer, overriding its palette color.
+    custom: HashMap<String, String>,
 }
 
 impl ColorPool {
@@ -46,12 +49,20 @@ impl ColorPool {
             palette,
             available,
             assigned: HashMap::new(),
+            custom: HashMap::new(),
         }
     }
 
     /// Assign a color to a viewer. Returns the color hex string.
     /// If all colors are in use, wraps around the palette.
+    ///
+    /// Idempotent: a viewer that already has a color (e.g. its data channel
+    /// re-opened after codec fallback re-created the peer) keeps its current
+    /// color instead of consuming another palette slot.
     fn assign(&mut self, viewer_id: &str) -> String {
+        if let Some(color) = self.current_color(viewer_id) {
+            return color.to_string();
+        }
         let color = self.available.pop_front().unwrap_or_else(|| {
             // Wrap around: use palette index based on total assigned count
             self.palette[self.assigned.len() % self.palette.len()].clone()
@@ -60,17 +71,33 @@ impl ColorPool {
         color
     }
 
-    /// Release a viewer's color back to the available pool.
+    /// Release a viewer's palette color back to the available pool.
     /// No-op if the viewer_id is not in the assigned map.
     fn release(&mut self, viewer_id: &str) {
+        self.custom.remove(viewer_id);
         if let Some(color) = self.assigned.remove(viewer_id) {
-            self.available.push_back(color);
+            // A wrapped-around color may still be held by another viewer;
+            // returning it now would hand out a duplicate later.
+            let still_used = self.assigned.values().any(|c| *c == color);
+            if !still_used && !self.available.contains(&color) {
+                self.available.push_back(color);
+            }
         }
     }
 
-    /// Update the assigned color for a viewer (for color picker changes).
+    /// Record a viewer's custom color (for color picker changes). The palette
+    /// color stays reserved for that viewer until it is released.
     fn update_color(&mut self, viewer_id: &str, new_color: String) {
-        self.assigned.insert(viewer_id.to_string(), new_color);
+        self.custom.insert(viewer_id.to_string(), new_color);
+    }
+
+    /// The color a viewer currently draws with: its custom color if it picked
+    /// one, otherwise its palette color.
+    fn current_color(&self, viewer_id: &str) -> Option<&str> {
+        self.custom
+            .get(viewer_id)
+            .or_else(|| self.assigned.get(viewer_id))
+            .map(String::as_str)
     }
 }
 
@@ -1049,6 +1076,44 @@ mod tests {
         let original = pool.assign("v1");
         assert_eq!(original, "#FF3B30");
         pool.update_color("v1", "#00C7BE".to_string());
-        assert_eq!(pool.assigned.get("v1").unwrap(), "#00C7BE");
+        assert_eq!(pool.current_color("v1"), Some("#00C7BE"));
+    }
+
+    #[test]
+    fn color_pool_reassign_keeps_existing_color() {
+        let mut pool = ColorPool::new();
+        let c1 = pool.assign("v1");
+        // Data channel re-opens after codec fallback.
+        assert_eq!(pool.assign("v1"), c1);
+        assert_eq!(pool.available.len(), 6);
+
+        pool.update_color("v1", "#00C7BE".to_string());
+        assert_eq!(pool.assign("v1"), "#00C7BE");
+        assert_eq!(pool.available.len(), 6);
+    }
+
+    #[test]
+    fn color_pool_release_returns_palette_color_not_custom() {
+        let mut pool = ColorPool::new();
+        let red = pool.assign("v1");
+        pool.assign("v2");
+        // v1 picks a custom color, then leaves.
+        pool.update_color("v1", "#00C7BE".to_string());
+        pool.release("v1");
+        assert_eq!(pool.available.back().unwrap(), &red);
+        assert_eq!(pool.available.iter().filter(|c| **c == red).count(), 1);
+        assert_eq!(pool.current_color("v1"), None);
+    }
+
+    #[test]
+    fn color_pool_release_keeps_wrapped_color_in_use() {
+        let mut pool = ColorPool::new();
+        for i in 0..8 {
+            pool.assign(&format!("v{}", i));
+        }
+        // v7 wrapped around and shares a color with an earlier viewer.
+        let shared = pool.current_color("v7").unwrap().to_string();
+        pool.release("v7");
+        assert!(!pool.available.contains(&shared));
     }
 }
