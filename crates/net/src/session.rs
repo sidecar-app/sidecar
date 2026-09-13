@@ -418,7 +418,23 @@ impl HostSession {
                 let mut locked = inner.lock().await;
                 let encoding_mime = locked.encoding_codec_mime.clone();
                 if let Some(viewer) = locked.viewers.get_mut(&viewer_id) {
-                    let codec_accepted = viewer.peer.set_remote_answer(sdp, &encoding_mime).await?;
+                    // A bad answer only breaks this viewer's connection: drop it
+                    // rather than ending the session for everyone.
+                    let codec_accepted = match viewer
+                        .peer
+                        .set_remote_answer(sdp, &encoding_mime)
+                        .await
+                    {
+                        Ok(accepted) => accepted,
+                        Err(e) => {
+                            warn!(viewer_id = %viewer_id, error = %e, "Failed to apply viewer answer, dropping viewer");
+                            if let Some(viewer_state) = locked.viewers.remove(&viewer_id) {
+                                locked.color_pool.release(&viewer_id);
+                                Self::teardown_viewer(viewer_state).await;
+                            }
+                            return Ok(());
+                        }
+                    };
                     info!(
                         viewer_id = %viewer_id,
                         codec_accepted,
@@ -456,11 +472,18 @@ impl HostSession {
             } => {
                 let mut locked = inner.lock().await;
                 if let Some(viewer) = locked.viewers.get_mut(&viewer_id) {
-                    viewer
+                    // One unusable candidate (e.g. an mDNS `.local` address) must not
+                    // end the session; ICE can still succeed with the others.
+                    match viewer
                         .peer
                         .add_ice_candidate(candidate, sdp_m_line_index.map(|v| v as u16), sdp_mid)
-                        .await?;
-                    debug!(viewer_id = %viewer_id, "Added ICE candidate");
+                        .await
+                    {
+                        Ok(()) => debug!(viewer_id = %viewer_id, "Added ICE candidate"),
+                        Err(e) => {
+                            warn!(viewer_id = %viewer_id, error = %e, "Ignoring invalid ICE candidate")
+                        }
+                    }
                 } else {
                     warn!(viewer_id = %viewer_id, "ICE candidate from unknown viewer");
                 }
@@ -517,6 +540,10 @@ impl HostSession {
     }
 
     /// Create a peer connection for a viewer, send an SDP offer, and store the state.
+    ///
+    /// Failing to build this viewer's peer connection or offer only skips the
+    /// viewer (logged); only signaling failures, which affect every viewer, are
+    /// returned as errors.
     async fn create_viewer_peer(
         locked: &mut SessionInner,
         viewer_id: String,
@@ -533,7 +560,7 @@ impl HostSession {
         let track_arc = viewer_track.track();
         let track_local = viewer_track.as_track_local();
         let ice_servers = locked.ice_servers.clone();
-        let pcm = PeerConnectionManager::new(
+        let pcm = match PeerConnectionManager::new(
             viewer_id.clone(),
             &ice_servers,
             track_local,
@@ -541,9 +568,23 @@ impl HostSession {
             relay_tx.clone(),
             dc_state_tx.clone(),
         )
-        .await?;
+        .await
+        {
+            Ok(pcm) => pcm,
+            Err(e) => {
+                warn!(viewer_id = %viewer_id, error = %e, "Failed to create viewer peer connection, skipping viewer");
+                return Ok(());
+            }
+        };
 
-        let sdp = pcm.create_offer().await?;
+        let sdp = match pcm.create_offer().await {
+            Ok(sdp) => sdp,
+            Err(e) => {
+                warn!(viewer_id = %viewer_id, error = %e, "Failed to create offer, skipping viewer");
+                let _ = pcm.close().await;
+                return Ok(());
+            }
+        };
         signaling
             .send(SignalingMessage::Offer {
                 sdp,
