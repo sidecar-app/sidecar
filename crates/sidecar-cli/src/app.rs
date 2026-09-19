@@ -684,7 +684,11 @@ fn run_host_screen(
                             state.apply_event(evt);
                         }
                         None => {
-                            state.error = Some("Pipeline stopped unexpectedly".to_string());
+                            // Keep a more specific reason (e.g. "Room expired") if one
+                            // was already reported before the session ended.
+                            state
+                                .error
+                                .get_or_insert_with(|| "Session ended".to_string());
                             terminal.draw(|f| state.render(f))?;
                             tokio::time::sleep(Duration::from_secs(2)).await;
                             break;

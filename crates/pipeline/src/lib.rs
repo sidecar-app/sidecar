@@ -1,5 +1,5 @@
 use tokio::sync::{mpsc, watch};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Fix glibc's dynamic mmap threshold behavior that causes OOM.
 ///
@@ -93,8 +93,9 @@ pub fn derive_status(rtt_ms: f64, packet_loss_pct: f64) -> &'static str {
 /// Holds all the resources needed to run and tear down the pipeline.
 /// Use `stop()` for ordered teardown: network -> encode -> capture.
 pub struct PipelineHandle {
-    /// HostSession task handle
-    session_handle: tokio::task::JoinHandle<Result<(), net::NetError>>,
+    /// Aborts the HostSession task. The task's JoinHandle is owned by the event
+    /// monitor, which ends (closing the event channel) when the session ends.
+    session_abort: tokio::task::AbortHandle,
     /// Encode thread stop signal
     encode_stop: std::sync::mpsc::SyncSender<()>,
     /// Capture handle (dropping stops capture)
@@ -135,16 +136,22 @@ impl PipelineHandle {
     pub async fn stop(self) {
         info!("Stopping pipeline...");
 
-        self.session_handle.abort();
-        let _ = self.session_handle.await;
-        debug!("Session task stopped");
+        // The event monitor owns the session JoinHandle and exits once the
+        // session task has finished, so awaiting it also awaits the session.
+        self.session_abort.abort();
+        let mut event_handle = self.event_handle;
+        if tokio::time::timeout(std::time::Duration::from_secs(2), &mut event_handle)
+            .await
+            .is_err()
+        {
+            warn!("Event monitoring task did not stop in time, aborting");
+            event_handle.abort();
+            let _ = event_handle.await;
+        }
+        debug!("Session and event monitoring tasks stopped");
 
         let _ = self.encode_stop.send(());
         debug!("Encode thread stop signal sent");
-
-        self.event_handle.abort();
-        let _ = self.event_handle.await;
-        debug!("Event monitoring task stopped");
 
         // Dropping the capture handle stops capture via its Drop impl.
         drop(self.capture_handle);
@@ -227,9 +234,10 @@ pub async fn start_pipeline(
         codec_switch_tx: Some(codec_switch_tx),
         ..Default::default()
     };
-    let (room_code, session_handle, annotation_tx, mut dc_state_rx, mut annotation_forward_rx) =
+    let (room_code, mut session_handle, annotation_tx, mut dc_state_rx, mut annotation_forward_rx) =
         net::HostSession::start(session_config, packet_rx, stats_tx.clone()).await?;
     info!(room_code = %room_code, "Session started");
+    let session_abort = session_handle.abort_handle();
 
     let (resolution_override_tx, mut resolution_override_rx) = mpsc::unbounded_channel::<u32>();
     let (encoder_params_override_tx, mut encoder_params_override_rx) =
@@ -636,6 +644,19 @@ pub async fn start_pipeline(
                     let params = abr.current_params().clone();
                     let _ = params_tx.send(params);
                 }
+                // The session ended on its own (signaling closed, room expired, or an
+                // error) or was aborted by stop(). Exiting drops `event_tx`, which
+                // tells the consumer the session is over.
+                result = &mut session_handle => {
+                    match result {
+                        Ok(Ok(())) => info!("Session ended"),
+                        Ok(Err(e)) => warn!(error = %e, "Session ended with error"),
+                        Err(e) if e.is_cancelled() => debug!("Session task aborted"),
+                        Err(e) => warn!(error = %e, "Session task failed"),
+                    }
+                    release_held_input(injector.as_ref(), &mut held_keys, &mut held_buttons);
+                    break;
+                }
                 else => {
                     info!("Event channels closed, stopping event monitor");
                     break;
@@ -663,7 +684,7 @@ pub async fn start_pipeline(
     });
 
     Ok(PipelineHandle {
-        session_handle,
+        session_abort,
         encode_stop,
         capture_handle,
         event_handle,
