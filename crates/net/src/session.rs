@@ -601,6 +601,7 @@ impl HostSession {
             viewer_id.clone(),
             track_arc,
             locked.packet_broadcast_tx.subscribe(),
+            relay_tx.clone(),
         );
 
         locked
@@ -612,10 +613,15 @@ impl HostSession {
 
     /// Spawn the per-viewer writer task that drains the broadcast frame stream and
     /// writes each frame to this viewer's own track.
+    ///
+    /// When the viewer lags and frames are skipped, a keyframe request is queued
+    /// on `relay_tx` as if the viewer had sent it, so it goes through the same
+    /// rate limit as viewer-initiated requests.
     fn spawn_viewer_writer(
         viewer_id: String,
         track: Arc<TrackLocalStaticSample>,
         mut frame_rx: broadcast::Receiver<FanoutFrame>,
+        relay_tx: mpsc::UnboundedSender<(String, String)>,
     ) -> tokio::task::JoinHandle<()> {
         tokio::spawn(async move {
             loop {
@@ -634,6 +640,9 @@ impl HostSession {
                     }
                     Err(broadcast::error::RecvError::Lagged(skipped)) => {
                         warn!(viewer_id = %viewer_id, skipped, "viewer fell behind, dropped frames");
+                        // The skipped frames are gone but RTP stays contiguous, so the
+                        // viewer can't detect the gap: request a keyframe to resync.
+                        let _ = relay_tx.send((viewer_id.clone(), r#"{"t":"kf"}"#.to_string()));
                     }
                     Err(broadcast::error::RecvError::Closed) => break,
                 }

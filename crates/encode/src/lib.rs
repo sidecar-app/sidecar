@@ -342,6 +342,14 @@ pub fn spawn_encode_thread(
             let mut last_applied_params: Option<EncoderParams> = None;
             let mut last_frame: Option<capture::Frame> = None;
             let mut next_encode_at = std::time::Instant::now();
+            // A packet dropped because the network side fell behind leaves a hole
+            // later inter frames reference; RTP sequence numbers stay contiguous,
+            // so the viewer can't detect it and shows corrupted video until the
+            // next keyframe. Force one, at most once per interval so sustained
+            // backpressure doesn't turn into a keyframe flood.
+            const DROP_KEYFRAME_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
+            let mut keyframe_after_drop = false;
+            let mut last_drop_keyframe: Option<std::time::Instant> = None;
 
             'encode_loop: loop {
                 if stop_rx.try_recv().is_ok() {
@@ -477,6 +485,15 @@ pub fn spawn_encode_thread(
                     tracing::info!("keyframe requested by viewer");
                 }
 
+                if keyframe_after_drop
+                    && last_drop_keyframe.is_none_or(|t| t.elapsed() >= DROP_KEYFRAME_INTERVAL)
+                {
+                    enc.request_keyframe();
+                    keyframe_after_drop = false;
+                    last_drop_keyframe = Some(std::time::Instant::now());
+                    tracing::debug!("keyframe forced after dropped packet");
+                }
+
                 if let Some(ref mut rx) = params_rx
                     && rx.has_changed().unwrap_or(false)
                 {
@@ -559,7 +576,9 @@ pub fn spawn_encode_thread(
                     Ok(None) => {}
                     Ok(Some(packet)) => match packet_tx.try_send(packet) {
                         Ok(()) => {}
-                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {}
+                        Err(tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+                            keyframe_after_drop = true;
+                        }
                         Err(tokio::sync::mpsc::error::TrySendError::Closed(_)) => {
                             break;
                         }
