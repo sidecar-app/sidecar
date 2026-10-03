@@ -340,6 +340,10 @@ pub fn spawn_encode_thread(
             // and repeated config_set calls may disturb the VP9 rate controller's
             // internal buffer state.
             let mut last_applied_params: Option<EncoderParams> = None;
+            // Set after a codec switch: the new encoder starts from the static
+            // config, so the current ABR/override params must be applied to it
+            // even though the watch channel hasn't changed.
+            let mut reapply_params = false;
             let mut last_frame: Option<capture::Frame> = None;
             let mut next_encode_at = std::time::Instant::now();
             // A packet dropped because the network side fell behind leaves a hole
@@ -451,6 +455,8 @@ pub fn spawn_encode_thread(
                     tracing::info!(from = ?config.codec, to = ?new_codec, "switching codec");
                     encoder = None;
                     config.codec = new_codec;
+                    last_applied_params = None;
+                    reapply_params = true;
                 }
 
                 // Lazily init encoder from first frame's actual dimensions
@@ -495,8 +501,9 @@ pub fn spawn_encode_thread(
                 }
 
                 if let Some(ref mut rx) = params_rx
-                    && rx.has_changed().unwrap_or(false)
+                    && (reapply_params || rx.has_changed().unwrap_or(false))
                 {
+                    reapply_params = false;
                     let new_params = rx.borrow_and_update().clone();
                     let actually_changed = last_applied_params.as_ref() != Some(&new_params);
                     if actually_changed {
