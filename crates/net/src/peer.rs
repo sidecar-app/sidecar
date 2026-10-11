@@ -24,6 +24,71 @@ use webrtc_ice::mdns::MulticastDnsMode;
 use crate::error::NetError;
 use crate::types::{IceServerConfig, SignalingMessage};
 
+/// Drop TURN servers that aren't reachable from this host.
+///
+/// An unreachable TURN server causes a ~5s ICE gather stall that blocks
+/// host/srflx candidates on LAN, so it's better left out. Probes run
+/// concurrently (500ms TCP connect, or a DNS lookup for UDP-only servers);
+/// non-TURN entries are kept as-is. Call once per session: the result is
+/// reused for every viewer's peer connection.
+pub async fn filter_reachable_ice_servers(ice_servers: &[IceServerConfig]) -> Vec<IceServerConfig> {
+    let probes = ice_servers.iter().map(|config| async move {
+        let Some(addr) = turn_probe_addr(&config.urls) else {
+            return true;
+        };
+        let reachable = if config.urls.contains("transport=udp") {
+            match tokio::net::lookup_host(addr.as_str()).await {
+                Ok(mut addrs) => addrs.next().is_some(),
+                Err(_) => false,
+            }
+        } else {
+            matches!(
+                tokio::time::timeout(
+                    Duration::from_millis(500),
+                    tokio::net::TcpStream::connect(addr.as_str()),
+                )
+                .await,
+                Ok(Ok(_))
+            )
+        };
+        if reachable {
+            info!(url = %config.urls, "TURN server reachable, including");
+        } else {
+            warn!(url = %config.urls, "TURN server unreachable, skipping");
+        }
+        reachable
+    });
+    let reachable = futures_util::future::join_all(probes).await;
+    ice_servers
+        .iter()
+        .zip(reachable)
+        .filter(|(_, ok)| *ok)
+        .map(|(config, _)| config.clone())
+        .collect()
+}
+
+/// `host:port` to probe for a `turn:`/`turns:` URL, or `None` for other
+/// schemes. Fills in the default port (3478, or 5349 for `turns:`) when the
+/// URL omits it, since `host` alone isn't a connectable socket address.
+fn turn_probe_addr(url: &str) -> Option<String> {
+    let (rest, default_port) = match url.strip_prefix("turns:") {
+        Some(rest) => (rest, 5349),
+        None => (url.strip_prefix("turn:")?, 3478),
+    };
+    let host_port = rest.split('?').next().unwrap_or(rest);
+    // An IPv6 literal (`[::1]`) contains colons itself; only a colon after
+    // the closing bracket is a port separator.
+    let has_port = match host_port.rfind(']') {
+        Some(end) => host_port[end..].contains(':'),
+        None => host_port.contains(':'),
+    };
+    Some(if has_port {
+        host_port.to_string()
+    } else {
+        format!("{host_port}:{default_port}")
+    })
+}
+
 /// Manages a single viewer's WebRTC peer connection lifecycle.
 ///
 /// Handles SDP offer/answer exchange, ICE candidate gathering and buffering,
@@ -73,45 +138,17 @@ impl PeerConnectionManager {
             .with_setting_engine(setting_engine)
             .build();
 
-        // Probe TURN servers for reachability first: an unreachable TURN server
-        // causes a ~5s ICE gather stall that blocks host/srflx candidates on LAN.
-        let mut rtc_ice_servers: Vec<RTCIceServer> = Vec::new();
-        for config in ice_servers {
-            if config.urls.starts_with("turn:") || config.urls.starts_with("turns:") {
-                let addr_part = config
-                    .urls
-                    .trim_start_matches("turns:")
-                    .trim_start_matches("turn:");
-                let addr_part = addr_part.split('?').next().unwrap_or(addr_part);
-                let is_udp = config.urls.contains("transport=udp");
-                let reachable = if is_udp {
-                    match tokio::net::lookup_host(addr_part).await {
-                        Ok(mut addrs) => addrs.next().is_some(),
-                        Err(_) => false,
-                    }
-                } else {
-                    matches!(
-                        tokio::time::timeout(
-                            Duration::from_millis(500),
-                            tokio::net::TcpStream::connect(addr_part),
-                        )
-                        .await,
-                        Ok(Ok(_))
-                    )
-                };
-                if reachable {
-                    info!(url = %config.urls, "TURN server reachable, including");
-                } else {
-                    warn!(url = %config.urls, "TURN server unreachable, skipping");
-                    continue;
-                }
-            }
-            rtc_ice_servers.push(RTCIceServer {
+        // TURN reachability is probed once per session (see
+        // `filter_reachable_ice_servers`), not here: this runs per viewer while
+        // the session lock is held.
+        let rtc_ice_servers: Vec<RTCIceServer> = ice_servers
+            .iter()
+            .map(|config| RTCIceServer {
                 urls: vec![config.urls.clone()],
                 username: config.username.clone().unwrap_or_default(),
                 credential: config.credential.clone().unwrap_or_default(),
-            });
-        }
+            })
+            .collect();
 
         let peer_connection = Arc::new(
             api.new_peer_connection(RTCConfiguration {
@@ -419,6 +456,36 @@ mod tests {
     use super::*;
     use crate::track::ViewerTrack;
     use crate::types::IceServerConfig;
+
+    #[test]
+    fn turn_probe_addr_keeps_explicit_port() {
+        assert_eq!(
+            turn_probe_addr("turn:turn.example.com:443?transport=tcp").as_deref(),
+            Some("turn.example.com:443")
+        );
+        assert_eq!(
+            turn_probe_addr("turn:[::1]:3479").as_deref(),
+            Some("[::1]:3479")
+        );
+    }
+
+    #[test]
+    fn turn_probe_addr_adds_default_port() {
+        assert_eq!(
+            turn_probe_addr("turn:turn.example.com?transport=tcp").as_deref(),
+            Some("turn.example.com:3478")
+        );
+        assert_eq!(
+            turn_probe_addr("turns:turn.example.com").as_deref(),
+            Some("turn.example.com:5349")
+        );
+        assert_eq!(turn_probe_addr("turn:[::1]").as_deref(), Some("[::1]:3478"));
+    }
+
+    #[test]
+    fn turn_probe_addr_ignores_non_turn() {
+        assert_eq!(turn_probe_addr("stun:stun.l.google.com:19302"), None);
+    }
 
     #[tokio::test]
     async fn peer_connection_manager_new_succeeds() {

@@ -19,7 +19,7 @@ use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSampl
 
 use crate::clipboard;
 use crate::error::NetError;
-use crate::peer::PeerConnectionManager;
+use crate::peer::{self, PeerConnectionManager};
 use crate::signaling::SignalingClient;
 use crate::stats::StatsCollector;
 use crate::track::ViewerTrack;
@@ -213,6 +213,10 @@ impl HostSession {
                 }
             }
         };
+
+        // Probe once here rather than per viewer: peer creation runs with the
+        // session lock held, so probing there would stall every other task.
+        let ice_servers = peer::filter_reachable_ice_servers(&ice_servers).await;
 
         // NOTE: Do not log ice_servers because IceServerConfig contains TURN credentials (D-12)
         info!(
