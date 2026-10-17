@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +45,7 @@ jobs:
         run: deno run -A npm:typescript/tsc --noEmit
 
   test:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
 
@@ -67,6 +67,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Matches the release runner (see release.yml), so the oldest FFmpeg
+          # and glibc we ship against are still built on every push, while
+          # lint/test cover the newer 26.04 stack.
           - platform: ubuntu-24.04
             rust-targets: ""
           - platform: macos-latest

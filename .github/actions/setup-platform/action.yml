@@ -31,13 +31,14 @@ runs:
       if: runner.os == 'macOS'
       shell: bash
       run: |
-        # ffmpeg-next 8.1 supports FFmpeg through version 8. Pin the Homebrew
-        # dependency so a new major FFmpeg release cannot break cold CI builds.
-        brew install libvpx ffmpeg@7
+        # ffmpeg-next 9.0 supports FFmpeg through version 9. Pin a versioned
+        # Homebrew formula (there is no ffmpeg@9 yet) so a new major FFmpeg
+        # release cannot break cold CI builds.
+        brew install libvpx ffmpeg@8
         echo "VPX_INCLUDE_DIR=$(brew --prefix libvpx)/include" >> $GITHUB_ENV
         echo "VPX_LIB_DIR=$(brew --prefix libvpx)/lib" >> $GITHUB_ENV
         echo "BINDGEN_EXTRA_CLANG_ARGS=-I$(brew --prefix libvpx)/include" >> $GITHUB_ENV
-        echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg@7)/lib/pkgconfig:$(brew --prefix libvpx)/lib/pkgconfig" >> $GITHUB_ENV
+        echo "PKG_CONFIG_PATH=$(brew --prefix ffmpeg@8)/lib/pkgconfig:$(brew --prefix libvpx)/lib/pkgconfig" >> $GITHUB_ENV
         echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
 
     # Cache vcpkg's installed/packages dirs so libvpx isn't rebuilt from source
