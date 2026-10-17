@@ -344,7 +344,7 @@ impl PeerConnectionManager {
         self.peer_connection.set_remote_description(answer).await?;
         self.remote_description_set = true;
 
-        let candidates: Vec<RTCIceCandidateInit> = self.pending_candidates.drain(..).collect();
+        let candidates = std::mem::take(&mut self.pending_candidates);
         for candidate in candidates {
             self.peer_connection.add_ice_candidate(candidate).await?;
         }

@@ -209,7 +209,7 @@ fn convert_to_bgra_frame(
         VideoFormat::RGBx | VideoFormat::RGBA => {
             let actual_stride = compute_stride_4bpp(data.len(), width, height);
             let (mut data, stride) = strip_row_padding(data, width, height, actual_stride);
-            for chunk in data.chunks_exact_mut(4) {
+            for chunk in data.as_chunks_mut::<4>().0 {
                 chunk.swap(0, 2);
                 chunk[3] = 255;
             }
@@ -226,7 +226,7 @@ fn convert_to_bgra_frame(
         VideoFormat::xBGR => {
             let actual_stride = compute_stride_4bpp(data.len(), width, height);
             let (mut data, stride) = strip_row_padding(data, width, height, actual_stride);
-            for chunk in data.chunks_exact_mut(4) {
+            for chunk in data.as_chunks_mut::<4>().0 {
                 let b = chunk[1];
                 let g = chunk[2];
                 let r = chunk[3];

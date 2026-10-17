@@ -38,7 +38,7 @@ fn make_frame(width: u32, height: u32, frame_idx: u32) -> Vec<u8> {
     let scene = (frame_idx / 30) % 2;
     if scene == 0 {
         // Solid dark blue (BGRA = [50, 40, 40, 255])
-        for pixel in data.chunks_exact_mut(4) {
+        for pixel in data.as_chunks_mut::<4>().0 {
             pixel[0] = 50; // B
             pixel[1] = 40; // G
             pixel[2] = 40; // R

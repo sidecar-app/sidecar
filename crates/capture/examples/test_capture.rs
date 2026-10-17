@@ -84,7 +84,7 @@ async fn main() {
 
 fn save_png(frame: &capture::Frame, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let mut rgba = frame.data.clone();
-    for chunk in rgba.chunks_exact_mut(4) {
+    for chunk in rgba.as_chunks_mut::<4>().0 {
         chunk.swap(0, 2);
     }
 
