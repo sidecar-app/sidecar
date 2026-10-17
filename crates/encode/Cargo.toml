@@ -18,7 +18,7 @@ thiserror = "2"
 tracing = "0.1"
 
 [target.'cfg(any(target_os = "linux", target_os = "macos"))'.dependencies]
-ffmpeg-next = "8"
+ffmpeg-next = "9"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
